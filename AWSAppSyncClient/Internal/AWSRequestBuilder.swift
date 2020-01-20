@@ -7,7 +7,7 @@
 import Foundation
 
 final class AWSRequestBuilder {
-
+    
     /// Given a `GraphQLMap` (e.g., parameters to a mutation, or an input type for a mutation), inspects the graph
     /// to find a set of variables that can be cast to an S3InputObject. This currently only supports one S3Object per
     /// GraphQLMap. The behavior of maps containing multiple S3 objects is undefined.
@@ -15,26 +15,26 @@ final class AWSRequestBuilder {
         guard let variables = variables else {
             return nil
         }
-
+        
         var builder = InternalS3ObjectDetailsBuilder()
-
+        
         for (key, value) in variables {
             guard let value = value else {
                 continue
             }
-
+            
             if let nestedMap = value as? GraphQLMapConvertible {
                 if let s3Object = s3Object(from: nestedMap.graphQLMap) {
                     return s3Object
                 }
             }
-
+            
             builder.offer(key: key, value: value)
         }
-
+        
         return builder.build()
     }
-
+    
     static func requestBody<Operation: GraphQLOperation>(
         from operation: Operation) -> GraphQLMap {
         return [
@@ -61,7 +61,23 @@ final class AWSRequestBuilder {
                         return nil
                     })
                     return objs.flatMap({$0})
+                }else if let nestedObjects = variables[key] as? [GraphQLMapConvertible] {
+                    let objs = nestedObjects.compactMap { (mapConvertible) -> [InternalS3ObjectDetails]? in
+                        return mapConvertible.graphQLMap.compactMap { (key, value ) -> [InternalS3ObjectDetails]? in
+                            if let value = value as? [GraphQLMapConvertible] {
+                                let s3 = value.compactMap({compiler($0.graphQLMap)})
+                                return s3
+                            }else if let value = value as? GraphQLMapConvertible {
+                                if let s3 = compiler(value.graphQLMap) {
+                                    return [s3]
+                                }
+                            }
+                            return nil
+                        }.flatMap({$0})
+                    }
+                    return objs.flatMap({$0})
                 }
+                return nil
             }
         }
         return nil
